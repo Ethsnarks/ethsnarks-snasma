@@ -1,6 +1,7 @@
 # Copyright (c) 2018 HarryR
 # License: GPL-3.0+
 
+import json
 import struct
 from ethsnarks.eddsa import eddsa_sign, eddsa_verify
 from ethsnarks.jubjub import Point, FQ, JUBJUB_L
@@ -32,12 +33,18 @@ class OnchainTransaction(object):
 		sig = Signature(R, s)
 		return SignedTransaction(sig, self, nonce)
 
+	def __str__(self):
+		return ' '.join(str(_) for _ in [self.from_idx, self.to_idx, self.amount])
+
 
 class Signature(object):
 	def __init__(self, R, s):
 		assert isinstance(R, Point)
 		self.R = R
 		self.s = s
+
+	def __str__(self):
+		return ' '.join(str(_) for _ in [self.R.x, self.R.y, self.s])
 
 
 class SignedTransaction(object):
@@ -48,8 +55,15 @@ class SignedTransaction(object):
 		self.tx = tx
 		self.nonce = nonce
 
+	def __str__(self):
+		return ' '.join(str(_) for _ in [self.tx, self.nonce, self.sig])
+
 	def message(self):
 		return self.tx.message(self.nonce)
+
+
+def path2str(path):
+	return ' '.join([str(_) for _ in path])
 
 
 class TransactionProof(object):
@@ -58,6 +72,10 @@ class TransactionProof(object):
 		self.before_to = before_to
 		self.after_from = after_from
 		self.after_to = after_to
+
+	def __str__(self):
+		paths = [self.before_from, self.before_to, self.after_from, self.after_to]
+		return ' '.join([path2str(_.path) for _ in paths])
 
 
 class AccountState(object):

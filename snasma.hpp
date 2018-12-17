@@ -144,7 +144,6 @@ public:
 
     uint32_t nonce;
 
-
     SignedTransaction() {}
 
     SignedTransaction(const decltype(sig) in_sig, const decltype(tx) in_tx, const decltype(nonce) in_nonce
@@ -162,8 +161,11 @@ public:
 
     friend std::istream& operator>> (std::istream& is, SignedTransaction& self)
     {
-        is >> self.sig;
         is >> self.tx;
+        is >> self.nonce;
+        is >> self.sig;
+
+        return is;
     }
 
     /**
@@ -196,6 +198,8 @@ static void read_tree_path (std::istream& is, std::vector<ethsnarks::FieldT>& ov
 class TransactionProof
 {
 public:
+    SignedTransaction stx;
+
     std::vector<ethsnarks::FieldT> before_from;
     std::vector<ethsnarks::FieldT> before_to;
 
@@ -204,10 +208,14 @@ public:
 
     friend std::istream& operator>> (std::istream& is, TransactionProof& self)
     {
+        is >> self.stx;
+
         read_tree_path(is, self.before_from);
         read_tree_path(is, self.before_to);
         read_tree_path(is, self.after_from);
         read_tree_path(is, self.after_to);
+
+        return is;
     }
 };
 
