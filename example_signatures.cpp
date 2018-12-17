@@ -1,7 +1,13 @@
+// Copyright (c) 2018 HarryR
+// License: GPL-3.0+
+
 #include "ethsnarks.hpp"
 #include "utils.hpp"
 #include "stubs.hpp"
+#include "jubjub/point.hpp"
 #include "jubjub/eddsa.hpp"
+
+#include "snasma.hpp"
 
 #include <fstream>
 #include <sstream>
@@ -73,6 +79,9 @@ int main( int argc, char **argv )
 	const EdwardsPoint base_point(FieldT("6310387441923805963163495340827050724868600896655464356695079365984952295953"),
 								  FieldT("12999349368805111542414555617351208271526681431102644160586079028197231734677"));
 
+	libff::enter_block("Constructing circuit");
+
+	libff::enter_block("Construct gadgets");
 	while ( i++ < arg_n && std::getline(infile, line))
 	{
 		istringstream iss(line);
@@ -101,12 +110,23 @@ int main( int argc, char **argv )
 
 		gadgets.emplace_back(pb, params, base_point, var_A, var_R, var_s, var_msg, FMT("sig", "[%zu].eddsa", i));
 	}
+	libff::leave_block("Construct gadgets");
 
+	libff::enter_block("Generating constraints");
+	for( auto& the_gadget : gadgets )
+	{
+		the_gadget.generate_r1cs_constraints();
+	}
+	libff::leave_block("Generating constraints");
+
+	libff::enter_block("Generating witness");
 	for( auto& the_gadget : gadgets )
 	{
 		the_gadget.generate_r1cs_witness();
-		the_gadget.generate_r1cs_constraints();
 	}
+	libff::leave_block("Generating witness");
+
+	libff::leave_block("Constructing circuit");
 
 	cout << pb.num_constraints() << " constraints" << endl;
 
