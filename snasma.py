@@ -3,6 +3,7 @@
 
 import json
 import struct
+from copy import copy
 from ethsnarks.eddsa import eddsa_sign, eddsa_verify
 from ethsnarks.jubjub import Point, FQ, JUBJUB_L
 from ethsnarks.merkletree import MerkleTree
@@ -66,18 +67,6 @@ def path2str(path):
 	return ' '.join([str(_) for _ in path])
 
 
-class TransactionProof(object):
-	def __init__(self, before_from, before_to, after_from, after_to):
-		self.before_from = before_from
-		self.before_to = before_to
-		self.after_from = after_from
-		self.after_to = after_to
-
-	def __str__(self):
-		paths = [self.before_from, self.before_to, self.after_from, self.after_to]
-		return ' '.join([path2str(_.path) for _ in paths])
-
-
 class AccountState(object):
 	def __init__(self, pubkey, balance, nonce, index=None):
 		assert isinstance(pubkey, Point)
@@ -90,9 +79,30 @@ class AccountState(object):
 		"""
 		Compress data so it can be used as a leaf in the merkle tree
 		"""
-		# TODO: pack balance and nonce into a single field
+		# TODO: pack balance and nonce into a single field?
 		args = [self.pubkey.x, self.pubkey.y, self.balance, self.nonce]
 		return LongsightL12p5_MP([int(_) for _ in args], 0)
+
+	def __str__(self):
+		return ' '.join(str(_) for _ in [self.pubkey.x, self.pubkey.y, self.balance, self.nonce])
+
+
+class TransactionProof(object):
+	def __init__(self, stx, state_from, state_to, before_from, before_to, after_to):
+		assert isinstance(stx, SignedTransaction)
+		assert isinstance(state_from, AccountState)
+		assert isinstance(state_to, AccountState)
+		self.stx = stx
+		self.state_from = state_from
+		self.state_to = state_to
+		self.before_from = before_from
+		self.before_to = before_to
+		self.after_to = after_to
+
+	def __str__(self):
+		subobjs = [str(_) for _ in [self.stx, self.state_from, self.state_to]]
+		paths = [self.before_from, self.before_to, self.after_to]
+		return ' '.join(subobjs + [path2str(_.path) for _ in paths])
 
 
 class AccountManager(object):
@@ -149,17 +159,20 @@ class AccountManager(object):
 		if from_account.balance < tx.amount:
 			raise RuntimeError("Balance not sufficient to perform transfer")
 
-		proof_before_from = self._tree.proof(tx.from_idx)
-		proof_before_to = self._tree.proof(tx.to_idx)
-
+		# Update `from` leaf, recording its state before modification
+		state_from = copy(from_account)
 		from_account.nonce += 1
 		from_account.balance -= tx.amount
-		to_account.balance += tx.amount
-
+		proof_before_from = self._tree.proof(tx.from_idx)
 		self._tree.update(tx.from_idx, from_account.encode())
+
+		# Update `to` leaf, recording its state before modification
+		state_to = copy(to_account)
+		to_account.balance += tx.amount
+		proof_before_to = self._tree.proof(tx.to_idx)
 		self._tree.update(tx.to_idx, to_account.encode())
 
 		proof_after_from = self._tree.proof(tx.from_idx)
 		proof_after_to = self._tree.proof(tx.to_idx)
 
-		return TransactionProof(proof_before_from, proof_before_to, proof_after_from, proof_after_to)
+		return TransactionProof(stx, state_from, state_to, proof_before_from, proof_before_to, proof_after_to)

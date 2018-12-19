@@ -1,6 +1,9 @@
 #ifndef SNASMA_HPP_
 #define SNASMA_HPP_
 
+// Copyright (c) 2018 HarryR
+// License: GPL-3.0+
+
 #include "ethsnarks.hpp"
 #include "jubjub/point.hpp"
 
@@ -9,6 +12,8 @@ namespace snasma {
 
 
 static const size_t TREE_DEPTH = 24;
+
+using std::endl;
 
 
 /**
@@ -52,9 +57,17 @@ public:
 
     friend std::istream& operator>> (std::istream& is, OnchainTransaction& self)
     {
-        is >> self.from_idx;
-        is >> self.to_idx;
-        is >> self.amount;
+        if( ! (is >> self.from_idx) ) {
+            std::cerr << "error read OnchainTransaction.from_idx" << endl;
+        }
+
+        if ( ! (is >> self.to_idx) ) {
+            std::cerr << "error read OnchainTransaction.to_idx" << endl;
+        }
+
+        if ( ! (is >> self.amount) ) {
+            std::cerr << "error read OnchainTransaction.amount" << endl;
+        }
 
         return is;
     }
@@ -76,11 +89,17 @@ public:
 
     friend std::istream& operator>> (std::istream& is, Signature& self)
     {
-        is >> self.R;
+        if ( ! (is >> self.R) ) {
+            std::cerr << "error read R" << endl;
+        }
 
         std::string read_str;
-        is >> read_str;
-        self.s = decltype(self.s)(read_str.c_str());
+        if ( ! (is >> read_str) ) {        
+            std::cerr << "error read s" << endl;
+        }
+        else {
+            self.s = decltype(self.s)(read_str.c_str());
+        }
 
         return is;
     }
@@ -119,8 +138,18 @@ public:
 
     friend std::istream& operator>> (std::istream& is, AccountState& self)
     {
-        is >> self.pubkey;
-        is >> self.nonce;
+        if( ! (is >> self.pubkey) ) {
+            std::cerr << "error reading AccountState.pubkey" << endl;
+        }
+
+        if( ! (is >> self.balance) ) {
+            std::cerr << "error reading AccountState.balance" << endl;
+        }
+
+        if( ! (is >> self.nonce) ) {
+            std::cerr << "error reading AccountState.nonce" << endl;
+        }
+
         return is;
     }
 };
@@ -161,9 +190,17 @@ public:
 
     friend std::istream& operator>> (std::istream& is, SignedTransaction& self)
     {
-        is >> self.tx;
-        is >> self.nonce;
-        is >> self.sig;
+        if ( ! (is >> self.tx) ) {
+            std::cerr << "error read SignedTransaction.tx" << endl;
+        }
+
+        if ( ! (is >> self.nonce) ) {
+            std::cerr << "error read SignedTransaction.nonce" << endl;
+        }
+
+        if ( ! (is >> self.sig) ) {
+            std::cerr << "error read SignedTransaction.sig" << endl;
+        }
 
         return is;
     }
@@ -180,14 +217,19 @@ public:
 };
 
 
-static void read_tree_path (std::istream& is, std::vector<ethsnarks::FieldT>& ov)
+static std::istream& read_tree_path (std::istream& is, std::vector<ethsnarks::FieldT>& ov)
 {
     std::string read_str;
     for( size_t i = 0; i < TREE_DEPTH; i++ )
     {            
-        is >> read_str;
+        if ( ! (is >> read_str) ) {
+            std::cerr << "error read path " << i << endl;
+            break;
+        }
         ov.emplace_back(read_str.c_str());
     }
+
+    return is;
 }
 
 
@@ -195,25 +237,52 @@ static void read_tree_path (std::istream& is, std::vector<ethsnarks::FieldT>& ov
 * Provided by the operator to supply merkle proofs of the accounts
 * before and after the transaction has been applied.
 */
-class TransactionProof
+class TxProof
 {
 public:
     SignedTransaction stx;
 
+    AccountState state_from;
+    AccountState state_to;
+
     std::vector<ethsnarks::FieldT> before_from;
     std::vector<ethsnarks::FieldT> before_to;
-
-    std::vector<ethsnarks::FieldT> after_from;
     std::vector<ethsnarks::FieldT> after_to;
 
-    friend std::istream& operator>> (std::istream& is, TransactionProof& self)
+    bool is_valid()
     {
-        is >> self.stx;
+        return stx.is_valid()
+            && state_from.is_valid()
+            && state_to.is_valid()
+            && before_from.size() == TREE_DEPTH
+            && before_to.size() == TREE_DEPTH
+            && after_to.size() == TREE_DEPTH;
+    }
 
+    friend std::istream& operator>> (std::istream& is, TxProof& self)
+    {
+        if ( ! (is >> self.stx) ) {
+            std::cerr << "error read TxProof.stx" << endl;
+        }
+
+        if ( ! (is >> self.state_from) ) {
+            std::cerr << "error read TxProof.state_from" << endl;
+        }
+
+        if ( ! (is >> self.state_to) ) {
+            std::cerr << "error read TxProof.state_to" << endl;
+        }
+
+        // Before transaction is applied
         read_tree_path(is, self.before_from);
+        std::cout << "read TxProof.before_from" << endl;
+
         read_tree_path(is, self.before_to);
-        read_tree_path(is, self.after_from);
+        std::cout << "read TxProof.before_to" << endl;
+
+        // After transaction is applied
         read_tree_path(is, self.after_to);
+        std::cout << "read TxProof.after_to" << endl;
 
         return is;
     }

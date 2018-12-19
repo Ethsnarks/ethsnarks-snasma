@@ -1,5 +1,6 @@
 build/
 __pycache__
+*.pyc
 *.txt
 vgcore.*
 callgrind.out.*
