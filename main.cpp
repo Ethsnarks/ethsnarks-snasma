@@ -25,9 +25,13 @@ using std::vector;
 using namespace ethsnarks;
 
 
+/**
+* Display all fields in the transaction
+*/
 void print_tx( const snasma::TxProof& p )
 {
-	cout << "Tx:\n\tFrom IDX: " << p.stx.tx.from_idx << "\n\tTo IDX: " << p.stx.tx.to_idx << "\n\tAmount: " << p.stx.tx.amount << endl;
+	cout << "Tx:" << endl;
+	cout << "\tFrom IDX: " << p.stx.tx.from_idx << "\n\tTo IDX: " << p.stx.tx.to_idx << "\n\tAmount: " << p.stx.tx.amount << endl;
 
 	cout << "Sig:\n\tR.x = "; p.stx.sig.R.x.print();
 	cout << "\tR.y = "; p.stx.sig.R.y.print();
@@ -89,40 +93,50 @@ int main( int argc, char **argv )
 
 	libff::enter_block("Circuit");	
 
-	libff::enter_block("setup");	
-	for( size_t j = 0; j < arg_n; j++ )
-	{
-		tx_gadgets.emplace_back(pb, params, (j == 0) ? merkle_root : tx_gadgets[j-1].result(), FMT("tx", "[%zu]", j));
-	}
-	libff::leave_block("setup");
+		libff::enter_block("setup");	
+		for( size_t j = 0; j < arg_n; j++ )
+		{
+			tx_gadgets.emplace_back(pb, params, (j == 0) ? merkle_root : tx_gadgets.back().result(), FMT("tx", "[%zu]", j));
+		}
+		libff::leave_block("setup");
 
-	libff::enter_block("constraints");
-	for( auto& gadget : tx_gadgets )
-	{
-		gadget.generate_r1cs_constraints();
-	}
-
-	libff::leave_block("constraints");
+		libff::enter_block("constraints");
+		for( auto& gadget : tx_gadgets )
+		{
+			gadget.generate_r1cs_constraints();
+		}
+		libff::leave_block("constraints");
 
 	libff::leave_block("Circuit");
 
 	cout << pb.num_constraints() << " constraints (" << (pb.num_constraints() / arg_n) << " avg/tx)" << endl;
 
 	libff::enter_block("Parsing Lines");
-	vector<snasma::TxProof> proofs;
 	string line;
 	size_t i = 0;
-	while ( i++ < arg_n && std::getline(infile, line) )
+	while ( std::getline(infile, line) )
 	{
-		decltype(proofs)::value_type item;
+		if( '#' == line[0] )
+		{
+			continue;
+		}
+
+		if( i >= arg_n )
+		{
+			break;
+		}
+
+		snasma::TxProof item;
 		if( istringstream(line) >> item )
 		{
 			if( ! item.is_valid() )
 			{
-				cerr << "is_valid failed " << i << endl;				
+				cerr << "is_valid failed " << i << endl;
 			}
 			else {
-				proofs.emplace_back(item);
+				print_tx(item);
+				tx_gadgets[i].generate_r1cs_witness(item);
+				i += 1;
 				continue;
 			}
 		}
@@ -136,9 +150,19 @@ int main( int argc, char **argv )
 	}
 	libff::leave_block("Parsing Lines");
 
-	for( const auto& p : proofs )
+	/*
+	for( const auto& p : tx_gadgets )
 	{
-		print_tx(p);		
+		cout << "Msg bits len: " << p.sig_m.size() << endl;
+		auto bits = p.m_sig.m_hash_RAM.m_RAM_bits.get_bits(pb);
+		print_bv(" msg bits", bits);
+	}
+	*/
+
+	if( ! pb.is_satisfied() )
+	{
+		cerr << "Not valid" << endl;
+		return 3;
 	}
 
 	return 0;

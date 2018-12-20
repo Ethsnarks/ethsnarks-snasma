@@ -274,15 +274,18 @@ public:
         }
 
         // Before transaction is applied
-        read_tree_path(is, self.before_from);
-        std::cout << "read TxProof.before_from" << endl;
+        if ( ! read_tree_path(is, self.before_from) ) {
+            std::cerr << "error read TxProof.before_from" << endl;
+        }
 
-        read_tree_path(is, self.before_to);
-        std::cout << "read TxProof.before_to" << endl;
+        if( ! read_tree_path(is, self.before_to) ) {
+            std::cerr << "error read TxProof.before_to" << endl;
+        }
 
         // After transaction is applied
-        read_tree_path(is, self.after_to);
-        std::cout << "read TxProof.after_to" << endl;
+        if( ! read_tree_path(is, self.after_to) ) {
+            std::cerr << "error read TxProof.after_to" << endl;
+        }
 
         return is;
     }

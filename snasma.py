@@ -3,68 +3,68 @@
 
 import json
 import struct
+import bitstring
 from copy import copy
-from ethsnarks.eddsa import eddsa_sign, eddsa_verify
-from ethsnarks.jubjub import Point, FQ, JUBJUB_L
+from collections import namedtuple
+
+from ethsnarks.eddsa import pureeddsa_sign, eddsa_tobits, eddsa_random_keypair
+from ethsnarks.jubjub import Point
+from ethsnarks.field import FQ
 from ethsnarks.merkletree import MerkleTree
 from ethsnarks.longsight import LongsightL12p5_MP
 
 
-def pack24(n):
-	return struct.pack('<I', n)[:3]
+TREE_SIZE = 24
+AMOUNT_BITS = 32
 
 
-def unpack24(s):
-	return struct.unpack('<I', x + b'\0')
-
-
-class OnchainTransaction(object):
-	def __init__(self, from_idx, to_idx, amount):
-		self.from_idx = from_idx
-		self.to_idx = to_idx
-		self.amount = amount
-
+class OnchainTransaction(namedtuple('_OnchainTransaction', ('from_idx', 'to_idx', 'amount'))):
 	def message(self, nonce):
-		return pack24(self.from_idx) + pack24(self.to_idx) + struct.pack('<H', self.amount) + pack24(nonce)
+		"""
+		Return an array of bits representing the on-chain transaction details
+		that will be included in the signature.
+
+		This is 104 bits long:
+
+		+-----------+---------+---------+---------+
+		| from_idx  | to_idx  | amount  | nonce   |
+		+-----------+---------+---------+---------+
+		| 24 bits   | 24 bits | 32 bits | 24 bits |
+		+-----------+---------+---------+---------+
+
+		Each integer is encoded in little-endian form,
+		with the least significant bit first.
+		"""
+		assert self.from_idx < (1<<TREE_SIZE)
+		assert self.to_idx < (1<<TREE_SIZE)
+		assert self.amount < (1<<AMOUNT_BITS)
+		assert nonce < (1<<TREE_SIZE)
+		msg_parts = [FQ(self.from_idx, 1<<TREE_SIZE), FQ(self.to_idx, 1<<TREE_SIZE),
+					 FQ(self.amount, 1<<AMOUNT_BITS), FQ(nonce, 1<<TREE_SIZE)]
+		msg_bits = ''.join([eddsa_tobits(_) for _ in msg_parts])
+		return bitstring.BitArray('0b' + msg_bits)
 
 	def sign(self, k, nonce):
 		msg = self.message(nonce)
-		B = Point.generator()
-		R, s, A = eddsa_sign(msg, k, B)
+		R, s, _ = pureeddsa_sign(msg, k)
 		sig = Signature(R, s)
-		return SignedTransaction(sig, self, nonce)
+		return SignedTransaction(self, nonce, sig)
 
 	def __str__(self):
 		return ' '.join(str(_) for _ in [self.from_idx, self.to_idx, self.amount])
 
 
-class Signature(object):
-	def __init__(self, R, s):
-		assert isinstance(R, Point)
-		self.R = R
-		self.s = s
-
+class Signature(namedtuple('_Signature', ('R', 's'))):
 	def __str__(self):
 		return ' '.join(str(_) for _ in [self.R.x, self.R.y, self.s])
 
 
-class SignedTransaction(object):
-	def __init__(self, sig, tx, nonce):
-		assert isinstance(sig, Signature)
-		assert isinstance(tx, OnchainTransaction)
-		self.sig = sig
-		self.tx = tx
-		self.nonce = nonce
-
+class SignedTransaction(namedtuple('_SignedTransaction', ('tx', 'nonce', 'sig'))):
 	def __str__(self):
 		return ' '.join(str(_) for _ in [self.tx, self.nonce, self.sig])
 
 	def message(self):
 		return self.tx.message(self.nonce)
-
-
-def path2str(path):
-	return ' '.join([str(_) for _ in path])
 
 
 class AccountState(object):
@@ -75,30 +75,25 @@ class AccountState(object):
 		self.nonce = nonce	
 		self.index = index
 
+	def leaf_fields(self):
+		# TODO: pack balance and nonce into a single field?
+		return [self.pubkey.x, self.pubkey.y, self.balance, self.nonce]
+
 	def encode(self):
 		"""
 		Compress data so it can be used as a leaf in the merkle tree
 		"""
-		# TODO: pack balance and nonce into a single field?
-		args = [self.pubkey.x, self.pubkey.y, self.balance, self.nonce]
-		return LongsightL12p5_MP([int(_) for _ in args], 0)
+		return LongsightL12p5_MP([int(_) for _ in self.leaf_fields()], 0)
 
 	def __str__(self):
-		return ' '.join(str(_) for _ in [self.pubkey.x, self.pubkey.y, self.balance, self.nonce])
+		return ' '.join(str(_) for _ in self.leaf_fields())
 
 
-class TransactionProof(object):
-	def __init__(self, stx, state_from, state_to, before_from, before_to, after_to):
-		assert isinstance(stx, SignedTransaction)
-		assert isinstance(state_from, AccountState)
-		assert isinstance(state_to, AccountState)
-		self.stx = stx
-		self.state_from = state_from
-		self.state_to = state_to
-		self.before_from = before_from
-		self.before_to = before_to
-		self.after_to = after_to
+def path2str(path):
+	return ' '.join([str(_) for _ in path])
 
+
+class TransactionProof(namedtuple('_TransactionProof', ('stx', 'state_from', 'state_to', 'before_from', 'before_to', 'after_to'))):
 	def __str__(self):
 		subobjs = [str(_) for _ in [self.stx, self.state_from, self.state_to]]
 		paths = [self.before_from, self.before_to, self.after_to]
@@ -122,18 +117,8 @@ class AccountManager(object):
 			index = self._key2idx[index]
 		return self._accounts[index]
 
-	def get_pubkey(self, account):
-		return self.lookup_account(account).pubkey
-
-	def get_balance(self, account):
-		return self.lookup_account(account).balance
-
-	def get_nonce(self, account):
-		return self.lookup_account(account).nonce
-
 	def new_account(self, balance=0):
-		secret = FQ.random(JUBJUB_L)
-		pubkey = Point.generator() * secret
+		secret, pubkey = eddsa_random_keypair()
 		return secret, self.add_account(pubkey, balance)
 
 	def add_account(self, pubkey, balance=0, nonce=0):
@@ -172,7 +157,4 @@ class AccountManager(object):
 		proof_before_to = self._tree.proof(tx.to_idx)
 		self._tree.update(tx.to_idx, to_account.encode())
 
-		proof_after_from = self._tree.proof(tx.from_idx)
-		proof_after_to = self._tree.proof(tx.to_idx)
-
-		return TransactionProof(stx, state_from, state_to, proof_before_from, proof_before_to, proof_after_to)
+		return TransactionProof(stx, state_from, state_to, proof_before_from, proof_before_to)
