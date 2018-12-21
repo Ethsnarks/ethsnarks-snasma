@@ -152,8 +152,6 @@ class AccountManager(object):
 
         merkle_root = self._tree.root
 
-        eprint("From Before", from_account.hash())
-
         # Update `from` leaf, recording its state before modification
         state_from = deepcopy(from_account)
         from_account.nonce += 1
@@ -161,15 +159,10 @@ class AccountManager(object):
         proof_before_from = self._tree.proof(tx.from_idx)
         self._tree.update(tx.from_idx, from_account.hash())
 
-        eprint("From After", from_account.hash())
-        eprint("To Before", to_account.hash())
-
         # Update `to` leaf, recording its state before modification
         state_to = deepcopy(to_account)
         to_account.balance += tx.amount
         proof_before_to = self._tree.proof(tx.to_idx)
         self._tree.update(tx.to_idx, to_account.hash())
-
-        eprint("To After", to_account.hash())
 
         return TransactionProof(merkle_root, stx, state_from, state_to, proof_before_from, proof_before_to)

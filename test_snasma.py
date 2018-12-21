@@ -7,7 +7,7 @@ def main():
 	mgr = AccountManager(1<<24)
 
 	accts = list()
-	for _ in range(2):
+	for _ in range(5):
 		accts.append(mgr.new_account(random.randint(1, 1000)))
 
 	all_transactions = []

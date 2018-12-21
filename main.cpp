@@ -213,15 +213,22 @@ int main( int argc, char **argv )
 	}
 
 	// Display circuit inputs and necessary intermediates
+	/*
 	for( const auto& gadget : tx_gadgets )
 	{
 		print_tx(pb, gadget);
 	}
+	*/
 
 	if( ! pb.is_satisfied() )
 	{
 		cerr << "Not valid" << endl;
 		return 3;
+	}
+
+	if( ! stub_test_proof_verify(pb) ) {
+		cerr << "FAIL" << endl;
+		return 4;
 	}
 
 	return 0;
