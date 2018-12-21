@@ -69,6 +69,8 @@ public:
     typedef markle_path_compute<LongsightL12p5_MP_gadget> MerklePathT;
     typedef merkle_path_authenticator<LongsightL12p5_MP_gadget> MerklePathCheckT;
 
+    const VariableT merkle_root;
+
     const VariableArrayT tx_from_idx;
     const VariableArrayT tx_to_idx;
     libsnark::dual_variable_gadget<FieldT> tx_amount;
@@ -115,15 +117,17 @@ public:
     TxCircuit(
         ProtoboardT& pb,
         const jubjub::Params& params,
-        const VariableT& merkle_root,
+        const VariableT& in_merkle_root,
         const std::string& annotation_prefix
     ) :
         GadgetT(pb, annotation_prefix),
 
+        merkle_root(in_merkle_root),
+
         // on-chain transaction spec
         tx_from_idx(make_var_array(pb, snasma::TREE_DEPTH, FMT(annotation_prefix, ".from_idx"))),
         tx_to_idx(make_var_array(pb, snasma::TREE_DEPTH, FMT(annotation_prefix, ".to_idx"))),
-        tx_amount(pb, 32, FMT(annotation_prefix, ".amount")),
+        tx_amount(pb, AMOUNT_BITS, FMT(annotation_prefix, ".amount")),
 
         // variables to store from account state
         from_pubkey(pb, FMT(annotation_prefix, ".from_pubkey")),
@@ -153,7 +157,7 @@ public:
         // first verfies from.balance is >= tx.amount
         //      from.balance -= tx.amount
         //      to.balance += tx.amount;
-        m_balance(pb, 96, from_balance, to_balance, tx_amount.packed, FMT(annotation_prefix, ".subadd")),
+        m_balance(pb, BALANCE_BITS, from_balance, to_balance, tx_amount.packed, FMT(annotation_prefix, ".subadd")),
 
         // Verify the from_idx and to_idx exist in the current merkle tree
         m_leaf_before_from(pb, libsnark::ONE, {from_pubkey.x, from_pubkey.y, from_balance, sig_nonce.packed}, FMT(annotation_prefix, ".leaf_before_from")),
@@ -192,9 +196,10 @@ public:
 
     void generate_r1cs_witness( const snasma::TxProof& proof )
     {
+        this->pb.val(merkle_root) = proof.merkle_root;
+
         tx_from_idx.fill_with_bits_of_ulong(this->pb, (unsigned long)proof.stx.tx.from_idx);
         tx_to_idx.fill_with_bits_of_ulong(this->pb, (unsigned long)proof.stx.tx.to_idx);
-
 
         //tx_amount.
         //const auto amt_bits = int_list_to_bits({proof.stx.tx.amount}, {32});

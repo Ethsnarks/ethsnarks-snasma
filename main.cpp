@@ -60,36 +60,55 @@ void print_tx( const snasma::TxProof& p )
 		cout << "\t" << i << " : "; p.before_to[i].print();
 	}
 
-	cout << "After To path:" << endl;
-	for( size_t i = 0; i < p.after_to.size(); i++ ) {
-		cout << "\t" << i << " : "; p.after_to[i].print();
-	}
 	cout << endl;
 }
 
 
-int main( int argc, char **argv )
+void print_tx( ProtoboardT& pb, const snasma::TxCircuit& p )
 {
-	if( argc < 3 ) {
-		cerr << "Usage: " << argv[0] << " <n> <transactions.txt>" << endl;
-		return 1;
-	}
+	cout << "Msg bits len: " << p.sig_m.size() << endl;
+	auto bits = p.m_sig.m_hash_RAM.m_RAM_bits.get_bits(pb);
+	print_bv(" msg bits", bits);
 
-	ppT::init_public_params();
-	ProtoboardT pb;
+	cout << "tx_from_idx: "; p.tx_from_idx.get_field_element_from_bits(pb).print();
+	cout << "tx_to_idx: "; p.tx_to_idx.get_field_element_from_bits(pb).print();
 
-	const auto arg_n = atoi(argv[1]);
-	const auto arg_sigsfile = argv[2];
-	ifstream infile(arg_sigsfile);
-	if( ! infile.is_open() )
-	{
-		cerr << "Error: cannot open input file - " << arg_sigsfile << endl;
-		return 2; 
-	}
+	cout << "from_pubkey.x: "; pb.val(p.from_pubkey.x).print();
+	cout << "from_pubkey.y: "; pb.val(p.from_pubkey.y).print();
+	cout << "from_balance: "; pb.val(p.from_balance).print();
+	cout << "next_nonce: "; pb.val(p.next_nonce).print();
 
-	VariableT merkle_root;
-	jubjub::Params params;
-	vector<snasma::TxCircuit> tx_gadgets;
+	cout << "to_pubkey.x: "; pb.val(p.to_pubkey.x).print();
+	cout << "to_pubkey.y: "; pb.val(p.to_pubkey.y).print();
+	cout << "to_balance: "; pb.val(p.to_balance).print();
+	cout << "to_nonce: "; pb.val(p.to_nonce).print();
+
+	cout << "sig_R.x: "; pb.val(p.sig_R.x).print();
+	cout << "sig_R.y: "; pb.val(p.sig_R.y).print();
+	cout << "sig_nonce: "; pb.val(p.sig_nonce.packed).print();
+	cout << "sig_s: "; p.sig_s.get_field_element_from_bits(pb).print();
+
+	cout << "balance.A: "; pb.val(p.m_balance.A).print();
+	cout << "balance.B: "; pb.val(p.m_balance.B).print();
+	cout << "balance.N: "; pb.val(p.m_balance.N).print();
+	cout << "balance.X: "; pb.val(p.m_balance.X).print();
+	cout << "balance.Y: "; pb.val(p.m_balance.Y).print();
+
+	cout << "balance.N_lt_A: "; pb.val(p.m_balance.N_lt_A).print();
+	cout << "balance.N_leq_A: "; pb.val(p.m_balance.N_leq_A).print();
+	cout << "balance.Y_overflow_lt: "; pb.val(p.m_balance.Y_overflow_lt).print();
+	cout << "balance.Y_overflow_leq: "; pb.val(p.m_balance.Y_overflow_leq).print();
+
+	cout << "m_leaf_before_from: "; pb.val(p.m_leaf_before_from.result()).print();
+	cout << "m_leaf_after_from: "; pb.val(p.m_leaf_after_from.result()).print();
+	cout << "m_leaf_before_to: "; pb.val(p.m_leaf_before_to.result()).print();
+	cout << "m_leaf_after_to: "; pb.val(p.m_leaf_after_to.result()).print();
+}
+
+
+const VariableT setup_circuits( ProtoboardT& pb, jubjub::Params& params, vector<snasma::TxCircuit>& tx_gadgets, int arg_n )
+{
+	const VariableT merkle_root = make_variable(pb, "merkle_root");
 
 	libff::enter_block("Circuit");	
 
@@ -111,6 +130,12 @@ int main( int argc, char **argv )
 
 	cout << pb.num_constraints() << " constraints (" << (pb.num_constraints() / arg_n) << " avg/tx)" << endl;
 
+	return merkle_root;
+}
+
+
+bool parse_lines( const VariableT& merkle_root, vector<snasma::TxCircuit>& tx_gadgets, int arg_n, ifstream& infile )
+{
 	libff::enter_block("Parsing Lines");
 	string line;
 	size_t i = 0;
@@ -134,7 +159,6 @@ int main( int argc, char **argv )
 				cerr << "is_valid failed " << i << endl;
 			}
 			else {
-				print_tx(item);
 				tx_gadgets[i].generate_r1cs_witness(item);
 				i += 1;
 				continue;
@@ -142,22 +166,57 @@ int main( int argc, char **argv )
 		}
 		else {
 			cerr << "Error parsing line " << i << endl;
-			print_tx(item);
 		}
 		
 		cerr << "Line is: " << line << endl;
-		return 3;
+		print_tx(item);
+		return false;
 	}
 	libff::leave_block("Parsing Lines");
 
-	/*
-	for( const auto& p : tx_gadgets )
-	{
-		cout << "Msg bits len: " << p.sig_m.size() << endl;
-		auto bits = p.m_sig.m_hash_RAM.m_RAM_bits.get_bits(pb);
-		print_bv(" msg bits", bits);
+	if( i != arg_n ) {
+		cerr << "Expected " << arg_n << " lines, got " << i << endl;
+		return false;
 	}
-	*/
+
+	return true;
+}
+
+
+int main( int argc, char **argv )
+{
+	if( argc < 3 ) {
+		cerr << "Usage: " << argv[0] << " <n> <transactions.txt>" << endl;
+		return 1;
+	}
+
+	ppT::init_public_params();
+	ProtoboardT pb;
+
+	// open inputs file
+	const auto arg_n = atoi(argv[1]);
+	const auto arg_sigsfile = argv[2];
+	ifstream infile(arg_sigsfile);
+	if( ! infile.is_open() )
+	{
+		cerr << "Error: cannot open input file - " << arg_sigsfile << endl;
+		return 2; 
+	}
+
+	// Setup circuit and parse lines
+	jubjub::Params params;
+	vector<snasma::TxCircuit> tx_gadgets;
+	const auto merkle_root = setup_circuits(pb, params, tx_gadgets, arg_n);
+	if ( ! parse_lines(merkle_root, tx_gadgets, arg_n, infile) )
+	{
+		return 3;
+	}
+
+	// Display circuit inputs and necessary intermediates
+	for( const auto& gadget : tx_gadgets )
+	{
+		print_tx(pb, gadget);
+	}
 
 	if( ! pb.is_satisfied() )
 	{

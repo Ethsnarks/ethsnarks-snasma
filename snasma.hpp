@@ -12,6 +12,8 @@ namespace snasma {
 
 
 static const size_t TREE_DEPTH = 24;
+static const size_t AMOUNT_BITS = 32;
+static const size_t BALANCE_BITS = 120;
 
 using std::endl;
 
@@ -32,7 +34,7 @@ class OnchainTransaction
 public:
     uint32_t from_idx;    // TREE_DEPTH bits
     uint32_t to_idx;      // TREE_DEPTH bits
-    uint16_t amount;      // 16 bits
+    uint32_t amount;      // AMOUNT_BITS bits
 
     OnchainTransaction() {}
 
@@ -212,7 +214,7 @@ public:
     {       
         return ethsnarks::int_list_to_bits(
             {tx.from_idx, tx.to_idx,  tx.amount, nonce},
-            {TREE_DEPTH,  TREE_DEPTH, 16,        TREE_DEPTH});
+            {TREE_DEPTH,  TREE_DEPTH, AMOUNT_BITS,        TREE_DEPTH});
     }
 };
 
@@ -240,6 +242,7 @@ static std::istream& read_tree_path (std::istream& is, std::vector<ethsnarks::Fi
 class TxProof
 {
 public:
+    ethsnarks::FieldT merkle_root;
     SignedTransaction stx;
 
     AccountState state_from;
@@ -247,7 +250,6 @@ public:
 
     std::vector<ethsnarks::FieldT> before_from;
     std::vector<ethsnarks::FieldT> before_to;
-    std::vector<ethsnarks::FieldT> after_to;
 
     bool is_valid()
     {
@@ -255,12 +257,19 @@ public:
             && state_from.is_valid()
             && state_to.is_valid()
             && before_from.size() == TREE_DEPTH
-            && before_to.size() == TREE_DEPTH
-            && after_to.size() == TREE_DEPTH;
+            && before_to.size() == TREE_DEPTH;
     }
 
     friend std::istream& operator>> (std::istream& is, TxProof& self)
     {
+        std::string read_str;
+        if ( ! (is >> read_str) ) {        
+            std::cerr << "error read merkle_root" << endl;
+        }
+        else {
+            self.merkle_root = decltype(self.merkle_root)(read_str.c_str());
+        }
+
         if ( ! (is >> self.stx) ) {
             std::cerr << "error read TxProof.stx" << endl;
         }
@@ -273,18 +282,12 @@ public:
             std::cerr << "error read TxProof.state_to" << endl;
         }
 
-        // Before transaction is applied
         if ( ! read_tree_path(is, self.before_from) ) {
             std::cerr << "error read TxProof.before_from" << endl;
         }
 
         if( ! read_tree_path(is, self.before_to) ) {
             std::cerr << "error read TxProof.before_to" << endl;
-        }
-
-        // After transaction is applied
-        if( ! read_tree_path(is, self.after_to) ) {
-            std::cerr << "error read TxProof.after_to" << endl;
         }
 
         return is;
