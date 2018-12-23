@@ -9,7 +9,7 @@ import bitstring
 from copy import copy, deepcopy
 from collections import namedtuple
 
-from ethsnarks.eddsa import pureeddsa_sign, eddsa_tobits, eddsa_random_keypair
+from ethsnarks.eddsa import pureeddsa_sign, eddsa_tobits, eddsa_random_keypair, Signature
 from ethsnarks.jubjub import Point
 from ethsnarks.field import FQ
 from ethsnarks.merkletree import MerkleTree
@@ -47,22 +47,15 @@ class OnchainTransaction(namedtuple('_OnchainTransaction', ('from_idx', 'to_idx'
         assert nonce < (1<<TREE_SIZE)
         msg_parts = [FQ(self.from_idx, 1<<TREE_SIZE), FQ(self.to_idx, 1<<TREE_SIZE),
                      FQ(self.amount, 1<<AMOUNT_BITS), FQ(nonce, 1<<TREE_SIZE)]
-        msg_bits = ''.join([eddsa_tobits(_) for _ in msg_parts])
-        return bitstring.BitArray('0b' + msg_bits)
+        return eddsa_tobits(*msg_parts)
 
     def sign(self, k, nonce):
         msg = self.message(nonce)
-        R, s, _ = pureeddsa_sign(msg, k)
-        sig = Signature(R, s)
+        A, sig, _ = pureeddsa_sign(msg, k)
         return SignedTransaction(self, nonce, sig)
 
     def __str__(self):
         return ' '.join(str(_) for _ in [self.from_idx, self.to_idx, self.amount])
-
-
-class Signature(namedtuple('_Signature', ('R', 's'))):
-    def __str__(self):
-        return ' '.join(str(_) for _ in [self.R.x, self.R.y, self.s])
 
 
 class SignedTransaction(namedtuple('_SignedTransaction', ('tx', 'nonce', 'sig'))):

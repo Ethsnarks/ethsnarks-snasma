@@ -201,10 +201,6 @@ public:
         tx_from_idx.fill_with_bits_of_ulong(this->pb, (unsigned long)proof.stx.tx.from_idx);
         tx_to_idx.fill_with_bits_of_ulong(this->pb, (unsigned long)proof.stx.tx.to_idx);
 
-        //tx_amount.
-        //const auto amt_bits = int_list_to_bits({proof.stx.tx.amount}, {32});
-        //print_bv(" amt bits", amt_bits);
-        //tx_amount.bits.fill_with_bits(this->pb, amt_bits);
         tx_amount.bits.fill_with_bits_of_ulong(this->pb, proof.stx.tx.amount);
         tx_amount.generate_r1cs_witness_from_bits();
 

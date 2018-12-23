@@ -21,6 +21,13 @@ def main():
 
 			tx_proof = mgr.apply_transaction(stx)
 			print(str(tx_proof))
+			all_transactions.append(tx_proof)
+
+	with open('transactions.dot', 'w') as handle:
+		handle.write("digraph transactions {\n")
+		for tx_proof in all_transactions:
+			handle.write("\t%d -> %d;\n" % (tx_proof.stx.tx.from_idx, tx_proof.stx.tx.to_idx))
+		handle.write("}\n")
 
 
 if __name__ == "__main__":
